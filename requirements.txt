@@ -7,3 +7,5 @@ python-dotenv
 pydantic
 psycopg2-binary
 aio-pika
+motor
+pydantic
