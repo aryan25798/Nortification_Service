@@ -1,48 +1,45 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.orm import Session
-from app.database import get_db
-from app import models, schemas, rabbitmq
-from app.utils import is_valid_notification_type
-import time
+from fastapi import APIRouter, HTTPException, BackgroundTasks
+from app.database import db
+from app.schemas import NotificationCreate, NotificationResponse
+from bson import ObjectId
+from datetime import datetime
+import asyncio
 
 router = APIRouter()
+notifications_collection = db.notifications
 
-def simulate_delivery_and_mark_sent(db: Session, notification_id: int):
-    time.sleep(1)
-    notification = db.query(models.Notification).get(notification_id)
-    if notification:
-        notification.status = "sent"
-        db.commit()
+async def simulate_delivery_and_mark_sent(notification_id: str):
+    await asyncio.sleep(1)  # simulate sending delay
+    await notifications_collection.update_one(
+        {"_id": ObjectId(notification_id)},
+        {"$set": {"status": "sent"}}
+    )
 
-@router.post("/notifications", response_model=schemas.NotificationResponse)
-async def send_notification(
-    notification: schemas.NotificationCreate,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-):
-    if not is_valid_notification_type(notification.type):
-        raise HTTPException(status_code=400, detail="Invalid notification type")
+@router.post("/notifications", response_model=NotificationResponse)
+async def send_notification(notification: NotificationCreate, background_tasks: BackgroundTasks):
+    notification_dict = notification.dict()
+    notification_dict["status"] = "pending"
+    notification_dict["created_at"] = datetime.utcnow()
 
-    db_notification = models.Notification(**notification.dict(), status="pending")
-    db.add(db_notification)
-    db.commit()
-    db.refresh(db_notification)
+    result = await notifications_collection.insert_one(notification_dict)
+    notification_id = result.inserted_id
 
-    await rabbitmq.publish_notification({"id": db_notification.id})
-    background_tasks.add_task(simulate_delivery_and_mark_sent, db, db_notification.id)
+    background_tasks.add_task(simulate_delivery_and_mark_sent, str(notification_id))
 
-    return db_notification
+    created_notification = await notifications_collection.find_one({"_id": notification_id})
+    return NotificationResponse(**created_notification, id=str(created_notification["_id"]))
 
-@router.get("/users/{user_id}/notifications", response_model=list[schemas.NotificationResponse])
-def get_user_notifications(user_id: int, db: Session = Depends(get_db)):
-    return db.query(models.Notification).filter(models.Notification.user_id == user_id).all()
+@router.get("/users/{user_id}/notifications", response_model=list[NotificationResponse])
+async def get_user_notifications(user_id: int):
+    notifications_cursor = notifications_collection.find({"user_id": user_id})
+    notifications = []
+    async for doc in notifications_cursor:
+        notifications.append(NotificationResponse(**doc, id=str(doc["_id"])))
+    return notifications
 
 @router.delete("/notifications/{notification_id}")
-def delete_notification(notification_id: int, db: Session = Depends(get_db)):
-    notification = db.query(models.Notification).filter(models.Notification.id == notification_id).first()
-    if not notification:
+async def delete_notification(notification_id: str):
+    result = await notifications_collection.delete_one({"_id": ObjectId(notification_id)})
+    if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Notification not found")
-
-    db.delete(notification)
-    db.commit()
     return {"detail": "Notification deleted successfully"}
