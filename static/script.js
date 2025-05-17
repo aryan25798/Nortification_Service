@@ -1,4 +1,7 @@
-const BASE_URL = "http://127.0.0.1:8000";
+// Automatically set BASE_URL depending on environment
+const BASE_URL = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+  ? "http://127.0.0.1:8000"
+  : `https://${window.location.hostname}`;  // Uses current domain when deployed
 
 const notificationForm = document.getElementById("notificationForm");
 const getNotificationsForm = document.getElementById("getNotificationsForm");
@@ -29,11 +32,13 @@ function showToast(message, isError = false) {
 }
 
 function launchConfetti() {
-  confetti({
-    particleCount: 80,
-    spread: 60,
-    origin: { y: 0.6 }
-  });
+  if (typeof confetti === "function") {
+    confetti({
+      particleCount: 80,
+      spread: 60,
+      origin: { y: 0.6 }
+    });
+  }
 }
 
 function renderNotifications(notifs) {
@@ -68,7 +73,7 @@ function renderNotifications(notifs) {
     header.innerHTML = `<span>${emoji} ${n.type.toUpperCase()}</span>`;
 
     const toggleIcon = document.createElement("i");
-    toggleIcon.className = "fas fa-chevron-down collapse-toggle";
+    toggleIcon.className = "fas fa-chevron-down collapse-toggle collapsed";
     toggleIcon.title = "Toggle details";
     header.appendChild(toggleIcon);
 
@@ -131,7 +136,7 @@ function exportToCSV(data) {
   const headers = ["ID", "Type", "Message", "Status", "Created At"];
   const csvRows = [
     headers.join(","),
-    ...data.map(n => 
+    ...data.map(n =>
       `"${n.id}","${n.type}","${n.message.replace(/"/g, '""')}","${n.status}","${new Date(n.created_at).toLocaleString()}"`
     )
   ];
@@ -141,7 +146,7 @@ function exportToCSV(data) {
 
   const a = document.createElement("a");
   a.href = url;
-  a.download = `notifications_${new Date().toISOString().slice(0,10)}.csv`;
+  a.download = `notifications_${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 
