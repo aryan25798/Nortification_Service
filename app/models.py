@@ -1,13 +1,11 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
-from sqlalchemy.sql import func
-from app.database import Base
+from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Optional
 
-class Notification(Base):
-    __tablename__ = "notifications"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False)
-    type = Column(String, nullable=False)  # email, sms, in-app
-    message = Column(String, nullable=False)
-    status = Column(String, default="pending")  # pending, sent, failed
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+class Notification(BaseModel):
+    id: Optional[str] = Field(alias="_id")
+    user_id: int
+    type: str  # "email", "sms", "in-app"
+    message: str
+    status: str = "pending"
+    created_at: datetime = Field(default_factory=datetime.utcnow)
